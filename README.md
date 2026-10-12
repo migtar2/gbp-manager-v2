@@ -1,29 +1,36 @@
 # GBP Manager V2 — Google Business Profile Management
 
-Controla **cualquier** Google Business Profile desde una única cuenta agencia. Incluye MCP server para integración con IA (Claude, Cursor, etc.).
+Núcleo TypeScript para gestionar **Google Business Profile** con OAuth directo (sin Pipedream) + servidor **MCP** para agentes de IA (Hermes, Claude Code, Cursor).
 
-## ✨ Características
+> Estado: producción-verificado localmente. TypeScript PASS · Build PASS · Tests PASS (96) · Gitleaks clean.
+> Evidencias: `docs/audits/P00_REALITY_AUDIT.md`, `docs/PROGRESO.md`.
 
-- **Multi-cuenta** — Gestiona todos los GBP que tu cuenta agencia controle
-- **Reseñas** — Lee, responde y gestiona reseñas con IA
-- **Publicaciones** — Crea, edita y borra posts (Standard, Event, Offer)
-- **Q&A** — Gestiona preguntas y respuestas
-- **Media** — Sube y gestiona fotos/vídeos
-- **Insights** — Métricas de rendimiento
-- **MCP Server** — Integra con Claude Code, Cursor, y otras herramientas IA
-- **Sin dependencias externas** — Usa Google APIs directamente (sin Pipedream)
+## ✨ Qué hace realmente (alineado con el código)
 
-## 🚀 Instalación rápida
+- **Multi-cuenta** — lista cuentas y establecimientos de una cuenta agencia (`AccountsAPI`, `LocationsAPI`)
+- **Reseñas** — lectura con paginación completa, respuesta y borrado de respuesta (`ReviewsAPI`)
+- **Publicaciones** — listado, creación, actualización y borrado de local posts (`PostsAPI`)
+- **Motor de respuestas híbrido** — reglas deterministas + LLM opcional + control de calidad + gestión de riesgo (`src/ai/`)
+- **MCP server** — herramientas READ ONLY siempre; WRITE CONTROLLED desactivadas por defecto (`src/mcp-server.ts`)
+- **Sin dependencias de terceros** — acceso directo a Google APIs
+
+### Roadmap (NO implementado todavía)
+
+Media, insights (`businessprofileperformance v1`), notificaciones Pub/Sub. **Q&A está fuera de roadmap: Google eliminó la My Business Q&A API el 2025-11-03 sin reemplazo.** Ver `docs/P05_PERSISTENCIA.md` y `docs/P06_INTEGRACION_WEB.md`.
+
+## 🚀 Instalación rápida (Windows/Linux)
 
 ```bash
 git clone https://github.com/migtar2/gbp-manager-v2.git
 cd gbp-manager-v2
 npm install
-cp .env.example .env
+cp .env.example .env      # en Windows: copy .env.example .env
 # Edita .env con tus credenciales de Google
-npm run auth    # Autentica con Google
-npm start       # Inicia el servidor
+npm run auth              # Autentica con Google (abre el navegador)
+npm start                 # Lista cuentas y establecimientos
 ```
+
+Requisitos: Node.js ≥ 20.
 
 ## 🔧 Configuración de Google Cloud
 
@@ -32,102 +39,132 @@ npm start       # Inicia el servidor
 3. Habilita estas APIs:
    - **My Business Account Management API**
    - **My Business Business Information API**
-   - **Google My Business API v4**
-   - **Business Profile Performance API**
+   - **Business Profile Performance API** (opcional, insights)
 4. Ve a **APIs & Services → Credentials**
 5. Crea **OAuth 2.0 Client ID** (Desktop)
 6. Copia el Client ID y Client Secret en `.env`
 
-## 📋 Variables de entorno
+## 📋 Variables de entorno (`.env`)
 
-```env
-GOOGLE_CLIENT_ID=tu-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=tu-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:3456/callback
-```
+| Variable | Requerida | Descripción |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | sí | OAuth Client ID |
+| `GOOGLE_CLIENT_SECRET` | sí | OAuth Client Secret |
+| `GOOGLE_REDIRECT_URI` | no | Por defecto `http://localhost:3456/callback` |
+| `AUTH_PORT` | no | Puerto del servidor de auth (3456) |
+| `GBP_ENABLE_WRITE_TOOLS` | no | `true` activa las herramientas MCP de escritura (por defecto **desactivadas**) |
+| `REPLY_LLM_BASE_URL` | no | Endpoint compatible con chat de OpenAI para el motor híbrido |
+| `REPLY_LLM_API_KEY` | no | API key de dicho endpoint |
+| `REPLY_LLM_MODEL` | no | Modelo a usar |
+| `LOG_LEVEL` | no | Nivel de logging |
 
-## 🤖 Uso con MCP (Claude Code, Cursor, etc.)
+## 🤖 Uso con MCP (Hermes, Claude Code, Cursor)
 
 ```bash
-# Añadir como MCP server
+npm run build
+# Claude Code:
 claude mcp add gbp-manager node /path/to/gbp-manager-v2/dist/mcp-server.js
-
-# O en Cursor: Settings → MCP → Add Server
+# Cursor: Settings → MCP → Add Server
 ```
 
-### Herramientas MCP disponibles
+### Herramientas MCP
+
+**READ ONLY** (siempre disponibles):
 
 | Herramienta | Descripción |
 |---|---|
-| `gbp_list_accounts` | Lista todas las cuentas GBP |
-| `gbp_list_locations` | Lista ubicaciones de una cuenta |
-| `gbp_list_reviews` | Lista reseñas de una ubicación |
-| `gbp_reply_review` | Responde a una reseña |
-| `gbp_create_post` | Crea una publicación |
-| `gbp_list_posts` | Lista publicaciones |
-| `gbp_delete_post` | Borra una publicación |
-| `gbp_get_insights` | Obtiene métricas de rendimiento |
-| `gbp_get_qa` | Obtiene preguntas y respuestas |
-| `gbp_answer_question` | Responde a una pregunta |
+| `gbp_list_accounts` | Cuentas GBP accesibles |
+| `gbp_list_locations` | Establecimientos de una cuenta (paginado) |
+| `gbp_list_reviews` | Reseñas (todas las páginas) |
+| `gbp_get_unreplied_reviews` | Reseñas sin respuesta o con respuesta rechazada |
+| `gbp_list_posts` | Publicaciones locales |
+| `gbp_draft_reply` | **Genera un BORRADOR** de respuesta con el motor híbrido (reglas + LLM opcional + calidad + riesgo). Nunca publica |
+
+**WRITE CONTROLLED** (solo con `GBP_ENABLE_WRITE_TOOLS=true`):
+
+| Herramienta | Descripción |
+|---|---|
+| `gbp_reply_review` | Responder una reseña (idempotente) |
+| `gbp_delete_review_reply` | Borrar la respuesta |
+| `gbp_create_post` | Crear publicación (idempotente) |
+| `gbp_delete_post` | Borrar publicación |
+
+Toda herramienta de escritura exige `accountId` + `locationId` y valida que el recurso pertenece a ellos (protección contra operaciones sobre el establecimiento equivocado).
 
 ## 📁 Estructura del proyecto
 
 ```
 gbp-manager-v2/
 ├── src/
-│   ├── index.ts              # Servidor principal
-│   ├── mcp-server.ts         # MCP server para IA
-│   ├── auth/
-│   │   ├── google-oauth.ts   # Autenticación OAuth 2.0
-│   │   └── token-manager.ts  # Gestión de tokens
+│   ├── index.ts              # CLI: lista cuentas y establecimientos
+│   ├── mcp-server.ts         # MCP server (READ/WRITE gateado)
+│   ├── auth/google-oauth.ts  # OAuth 2.0 (state anti-CSRF, tokens 0600, revoke)
 │   ├── api/
-│   │   ├── accounts.ts       # Gestión de cuentas
-│   │   ├── locations.ts      # Gestión de ubicaciones
-│   │   ├── reviews.ts        # Gestión de reseñas
-│   │   ├── posts.ts          # Gestión de publicaciones
-│   │   ├── media.ts          # Gestión de medios
-│   │   ├── qa.ts             # Preguntas y respuestas
-│   │   └── insights.ts       # Métricas
+│   │   ├── gbp-rest.ts       # Cliente REST firmado (endpoints sin SDK)
+│   │   ├── accounts.ts       # mybusinessaccountmanagement v1
+│   │   ├── locations.ts      # mybusinessbusinessinformation v1
+│   │   ├── reviews.ts        # reviews (REST verificado)
+│   │   └── posts.ts          # localPosts (REST verificado)
 │   ├── ai/
-│   │   ├── reply-engine.ts   # Generador de respuestas IA
-│   │   └── anti-repetition.ts # Anti-repetición
-│   └── utils/
-│       ├── logger.ts         # Logging
-│       └── config.ts         # Configuración
+│   │   ├── reply-engine.ts   # Nivel 1: reglas + anti-repetición
+│   │   ├── llm-adapter.ts    # Nivel 2: LLM opcional (OpenAI-compatible)
+│   │   ├── quality.ts        # Nivel 3: control de calidad
+│   │   ├── risk.ts           # Nivel 4: riesgo → revisión humana
+│   │   ├── hybrid-engine.ts  # Orquestador L1-L4
+│   │   └── star-rating.ts    # Normalización 'ONE'..'FIVE' ↔ 1-5
+│   └── mcp/
+│       ├── guards.ts         # Validación, aislamiento, idempotencia
+│       └── write-ops.ts      # Operaciones de escritura testeables
+├── docs/                     # Auditorías, progreso, integración
 ├── .env.example
-├── package.json
-├── tsconfig.json
-└── README.md
+└── package.json
 ```
 
-## 🔐 Permisos OAuth necesarios
+## 🔐 Permisos OAuth
 
 ```
 https://www.googleapis.com/auth/business.manage
 ```
 
-Este scope cubre:
-- Lectura/escritura de reseñas
-- Gestión de publicaciones
-- Gestión de ubicaciones
-- Acceso a insights
+Cubre lectura/escritura de reseñas, publicaciones, ubicaciones e insights.
 
-## 📊 APIs de Google utilizadas
+## ⚠️ Requisitos de acceso (importante)
 
-| API | Endpoint | Uso |
+- Las APIs de Business Profile exigen **"Application For Basic API Access"** (revisión oficial ≤14 días). **Cuota 0 = acceso aún no concedido**; 300 QPM = aprobado.
+- Límites: **10 ediciones por minuto por ficha** (no ampliable); ~300 QPM de lectura. El cliente aplica backoff con jitter ante 429.
+- Las operaciones de reseñas solo funcionan sobre **fichas verificadas**.
+- Las políticas de Google prohíben automatizar respuestas a reseñas sin consentimiento explícito del cliente final (por eso las escrituras están desactivadas por defecto y las reseñas de riesgo van a revisión humana).
+
+## 📊 APIs de Google utilizadas (verificadas 2026-10-12)
+
+| Capacidad | API / endpoint | Estado |
 |---|---|---|
-| Account Management | `mybusinessaccountmanagement.googleapis.com` | Cuentas y usuarios |
-| Business Information | `mybusinessbusinessinformation.googleapis.com` | Ubicaciones |
-| Google My Business v4 | `mybusiness.googleapis.com` | Reseñas, posts, media |
-| Performance | `mybusinessperformance.googleapis.com` | Insights |
+| Cuentas | My Business Account Management v1 (SDK) | ✅ |
+| Ubicaciones | My Business Business Information v1 (SDK) | ✅ |
+| Reseñas | `mybusiness.googleapis.com/v4/accounts/*/locations/*/reviews*` (REST) | ✅ endpoints vivos |
+| Publicaciones | `mybusiness.googleapis.com/v4/accounts/*/locations/*/localPosts*` (REST) | ✅ endpoints vivos |
+| Insights | Business Profile Performance v1 | pendiente de integrar |
+| Notificaciones | My Business Notifications v1 (Pub/Sub) | pendiente de integrar |
 
-## 🆕 Novedades API v4.9 (2026)
+**Importante:** la API legacy `mybusiness:v4` fue retirada del SDK `googleapis` y del discovery de Google; los endpoints de reseñas y publicaciones siguen operativos y se llaman mediante REST firmado (`src/api/gbp-rest.ts`). Los métodos `accounts.*` y `locations.*` del legacy están **muertos** (404) y se usan los clientes nuevos.
 
-- **ReviewReplyState** — Moderación de respuestas (PENDING/APPROVED/REJECTED)
-- **PolicyViolation** — Ver por qué Google rechazó una respuesta
-- **ReviewMediaItem** — Fotos/vídeos de clientes en reseñas
-- **RecurrenceInfo** — Posts recurrentes programados
-- **review_reply_url** — URL directa de la respuesta
+## 🧪 Testing
+
+```bash
+npm run typecheck   # tsc --noEmit
+npm test            # jest (96 tests)
+npm run lint        # eslint
+```
+
+Cobertura de riesgo: normalización de rating, motor híbrido (reglas/LLM/calidad/riesgo), OAuth (state, permisos de token, revocación), guards MCP (aislamiento de cuentas/ubicaciones, idempotencia, fail-closed), contratos de API (paginación, `updateReply`, pitfall `reviewReply:{}`).
+
+## 🔒 Seguridad
+
+- Sin secretos en el repo ni en el historial (Gitleaks en CI).
+- `token.json` con permisos 0600; revocación disponible (`GoogleAuth.revoke()`).
+- Escrituras MCP desactivadas por defecto.
+- Contenido de reseñas tratado como datos externos no confiables (prompt injection).
+- Ver `docs/audits/P00_REALITY_AUDIT.md` para el registro de hallazgos.
 
 ## 📄 Licencia
 

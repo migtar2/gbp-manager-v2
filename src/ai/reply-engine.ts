@@ -25,6 +25,8 @@ export interface GeneratedReply {
   similarityScore: number;
 }
 
+import { normalizeStarRating } from './star-rating';
+
 // ============ Pattern Banks ============
 
 interface PatternBank {
@@ -260,7 +262,9 @@ export async function generateReply(
   ctx: ReplyContext,
   recentReplies: string[] = []
 ): Promise<GeneratedReply> {
-  const { reviewerName, starRating, comment, tone, treatment, useEmojis, signature } = ctx;
+  const { reviewerName, comment, tone, treatment, useEmojis, signature } = ctx;
+  // La API devuelve 'ONE'..'FIVE'; el motor trabaja con números (P1-004).
+  const starRating = normalizeStarRating(ctx.starRating);
   const firstName = reviewerName.split(' ')[0];
   const details = extractDetails(comment);
   const patterns = PATTERNS[treatment]?.[tone] || PATTERNS.tu.profesional;
@@ -270,7 +274,7 @@ export async function generateReply(
   const SIMILARITY_THRESHOLD = 0.45;
 
   let bestReply = '';
-  let bestSimilarity = 1;
+  let bestSimilarity = Infinity;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const gratitude = treatment === 'usted' || tone === 'formal' || tone === 'premium'
@@ -298,13 +302,14 @@ export async function generateReply(
       : treatment === 'usted' ? 'Quedamos a su disposición.' : 'Estamos aquí para lo que necesites.';
 
     let reply = `${opening} ${middle} ${closing}`;
-    if (signature) reply += `\n\n${signature}`;
+    reply = reply.replace(/\s+/g, ' ').trim();
 
     if (!useEmojis) {
-      reply = reply.replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]/g, '').trim();
+      reply = reply.replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]/g, '').replace(/\s+/g, ' ').trim();
     }
 
-    reply = reply.replace(/\s+/g, ' ').trim();
+    // La firma se añade al final sin colapsar su salto de línea.
+    if (signature) reply += `\n\n${signature}`;
 
     const replyBigrams = getBigrams(reply);
     let maxSimilarity = 0;
@@ -337,15 +342,8 @@ export async function generateReply(
 }
 
 // ============ Risk Detection ============
+// La detección de riesgo vive en ./risk.ts (Nivel 4 del motor híbrido).
+// Se re-exporta para mantener compatibilidad con los consumidores existentes.
 
-const RISK_KEYWORDS = [
-  'amenaza', 'abogado', 'demanda', 'denuncia', 'indemnización', 'muerte',
-  'intoxicación', 'discriminación', 'acoso', 'menores', 'sexual',
-  'datos personales', 'protección de datos', 'reclamación', 'indemnizar',
-  'chantaje', 'suplantación', 'delito', 'policía', 'guardia civil',
-];
-
-export function hasRisk(text: string): boolean {
-  const lower = text.toLowerCase();
-  return RISK_KEYWORDS.some(kw => lower.includes(kw));
-}
+export { hasRisk, assessRisk } from './risk';
+export type { RiskAssessment, RiskLevel, RiskCategory } from './risk';
