@@ -65,11 +65,17 @@ function fail(error: unknown) {
 }
 
 function reviewSummary(r: Review) {
+  let stars: number | null = null;
+  try {
+    stars = normalizeStarRating(r.starRating);
+  } catch {
+    // STAR_RATING_UNSPECIFIED u otro valor futuro: se devuelve null, no se rompe.
+  }
   return {
     name: r.name,
     id: r.reviewId,
     reviewer: sanitizeExternalText(r.reviewer?.displayName || '', 120),
-    stars: normalizeStarRating(r.starRating),
+    stars,
     comment: r.comment ? sanitizeExternalText(r.comment) : null,
     date: r.createTime,
     reply: r.reviewReply?.comment ? sanitizeExternalText(r.reviewReply.comment) : null,

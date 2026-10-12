@@ -25,19 +25,45 @@ export interface RestClient {
 }
 
 export class GoogleRestClient implements RestClient {
+  private readonly maxRetries: number;
+  private readonly baseDelayMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
+
   constructor(
     private readonly auth: OAuth2Client,
-    private readonly baseUrl: string = 'https://mybusiness.googleapis.com/v4'
-  ) {}
+    private readonly baseUrl: string = 'https://mybusiness.googleapis.com/v4',
+    options: {
+      maxRetries?: number;
+      baseDelayMs?: number;
+      sleep?: (ms: number) => Promise<void>;
+    } = {}
+  ) {
+    this.maxRetries = options.maxRetries ?? 2;
+    this.baseDelayMs = options.baseDelayMs ?? 500;
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  }
 
   async request<T>(req: RestRequest): Promise<T> {
-    const response = await this.auth.request({
-      method: req.method,
-      url: `${this.baseUrl}${req.url}`,
-      params: req.params,
-      data: req.data,
-    });
-    return response.data as T;
+    let attempt = 0;
+    for (;;) {
+      try {
+        const response = await this.auth.request({
+          method: req.method,
+          url: `${this.baseUrl}${req.url}`,
+          params: req.params,
+          data: req.data,
+        });
+        return response.data as T;
+      } catch (error) {
+        const status = (error as { response?: { status?: number } })?.response?.status;
+        const retryable = status === 429 || (status !== undefined && status >= 500);
+        if (!retryable || attempt >= this.maxRetries) throw error;
+        attempt++;
+        // Backoff exponencial con jitter (recomendado por Google ante 429).
+        const jitter = Math.floor(Math.random() * this.baseDelayMs);
+        await this.sleep(this.baseDelayMs * 2 ** (attempt - 1) + jitter);
+      }
+    }
   }
 }
 

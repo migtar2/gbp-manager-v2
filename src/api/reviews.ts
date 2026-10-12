@@ -19,11 +19,14 @@ export type StarRatingEnum = 'ONE' | 'TWO' | 'THREE' | 'FOUR' | 'FIVE';
 export interface ReviewReply {
   comment: string;
   updateTime: string;
-  reviewReplyState?: 'PENDING' | 'APPROVED' | 'REJECTED';
-  policyViolation?: {
-    type: string;
-    details: string;
-  };
+  reviewReplyState?: 'REVIEW_REPLY_STATE_UNSPECIFIED' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  /**
+   * Enum PolicyViolation (output only, añadido 2026-07): p. ej.
+   * ACCOUNT_RESTRICTED_AND_SUSPENDED, LOCATION_SUSPENDED, EDITING_RESTRICTION...
+   * Solo se rellena si reviewReplyState = REJECTED. Se modela como string
+   * libre para tolerar valores nuevos (la API pide prepararse para ellos).
+   */
+  policyViolation?: string;
 }
 
 export interface Review {

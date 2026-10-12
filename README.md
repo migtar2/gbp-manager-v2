@@ -16,7 +16,7 @@ Núcleo TypeScript para gestionar **Google Business Profile** con OAuth directo 
 
 ### Roadmap (NO implementado todavía)
 
-Q&A (`mybusinessqanda v1`), media, insights (`businessprofileperformance v1`), notificaciones Pub/Sub. Ver `docs/P05_PERSISTENCIA.md` y `docs/P06_INTEGRACION_WEB.md`.
+Media, insights (`businessprofileperformance v1`), notificaciones Pub/Sub. **Q&A está fuera de roadmap: Google eliminó la My Business Q&A API el 2025-11-03 sin reemplazo.** Ver `docs/P05_PERSISTENCIA.md` y `docs/P06_INTEGRACION_WEB.md`.
 
 ## 🚀 Instalación rápida (Windows/Linux)
 
@@ -126,6 +126,13 @@ https://www.googleapis.com/auth/business.manage
 ```
 
 Cubre lectura/escritura de reseñas, publicaciones, ubicaciones e insights.
+
+## ⚠️ Requisitos de acceso (importante)
+
+- Las APIs de Business Profile exigen **"Application For Basic API Access"** (revisión oficial ≤14 días). **Cuota 0 = acceso aún no concedido**; 300 QPM = aprobado.
+- Límites: **10 ediciones por minuto por ficha** (no ampliable); ~300 QPM de lectura. El cliente aplica backoff con jitter ante 429.
+- Las operaciones de reseñas solo funcionan sobre **fichas verificadas**.
+- Las políticas de Google prohíben automatizar respuestas a reseñas sin consentimiento explícito del cliente final (por eso las escrituras están desactivadas por defecto y las reseñas de riesgo van a revisión humana).
 
 ## 📊 APIs de Google utilizadas (verificadas 2026-10-12)
 
