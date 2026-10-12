@@ -6,12 +6,12 @@
 |---|---|---|---|---|
 | P00 | Reality Audit | DONE | Orchestrator | Ver `docs/audits/P00_REALITY_AUDIT.md`. 2 P0 confirmados, 6 P1, 4 P2. |
 | P01 | Google Business Profile API | IN PROGRESS | Subagente investigación | Verificando estado real de APIs (legacy v4 vs Business Profile APIs). |
-| P02 | OAuth y seguridad | TODO | Orchestrator | — |
-| P03 | Endurecimiento MCP | TODO | Orchestrator | — |
-| P04 | Motor de respuestas | TODO | Orchestrator | — |
+| P02 | OAuth y seguridad | DONE | Orchestrator | state anti-CSRF, token 0600, revoke(). Tests `src/auth/google-oauth.test.ts` (5). |
+| P03 | Endurecimiento MCP | IN PROGRESS | Orchestrator | Guards (nombres, confusión cuentas, write fail-closed, idempotencia) DONE + tests. Reescritura de `mcp-server.ts` pendiente de P01. |
+| P04 | Motor de respuestas | DONE | Orchestrator | Motor híbrido L1-L4 (rules/LLM/quality/risk). 36 tests. Corregidos P1-004 y bug bestReply vacío. |
 | P05 | Persistencia y sincronización | TODO | Orchestrator | — |
 | P06 | Integración con la app web | TODO | Orchestrator | — |
-| P07 | Quality engineering | TODO | Orchestrator | — |
+| P07 | Quality engineering | IN PROGRESS | Orchestrator | 53 tests activos (36 AI + 12 guards + 5 auth). Faltan tests de capa API (P01). |
 | P08 | Revisión independiente | TODO | Subagente reviewer | — |
 | P09 | Documentación y GitHub | TODO | Orchestrator | — |
 | P10 | Ecosistema Google MCP | IN PROGRESS | Subagente investigación | — |

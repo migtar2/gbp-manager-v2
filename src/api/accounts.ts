@@ -1,12 +1,13 @@
 /**
  * Google Business Profile Accounts API
- * 
- * Manages GBP accounts and user access.
- * Supports agency accounts that manage multiple business profiles.
+ *
+ * Cliente oficial `mybusinessaccountmanagement v1` del SDK googleapis
+ * (sustituye al legacy v4 `accounts.list` retirado — verificado 2026-10-12).
  */
 
 import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
+import type { OAuth2Client } from 'google-auth-library';
+import { clampPageSize } from './gbp-rest';
 
 export interface Account {
   name: string;
@@ -17,47 +18,32 @@ export interface Account {
 }
 
 export class AccountsAPI {
-  private mybusinessaccount: any;
+  private api;
 
   constructor(auth: OAuth2Client) {
-    this.mybusinessaccount = google.mybusinessaccountmanagement({
-      version: 'v1',
-      auth,
-    });
+    this.api = google.mybusinessaccountmanagement({ version: 'v1', auth });
   }
 
-  /**
-   * List all accessible GBP accounts
-   */
-  async listAccounts(): Promise<Account[]> {
-    const response = await this.mybusinessaccount.accounts.list();
-    return response.data.accounts || [];
+  /** Lista todas las cuentas GBP accesibles (con paginación completa). */
+  async listAccounts(options: { pageSize?: number; maxPages?: number } = {}): Promise<Account[]> {
+    const pageSize = clampPageSize(options.pageSize, 100, 100);
+    const maxPages = options.maxPages ?? 10;
+    const all: Account[] = [];
+    let pageToken: string | undefined;
+
+    for (let page = 0; page < maxPages; page++) {
+      const response = await this.api.accounts.list({ pageSize, pageToken });
+      all.push(...((response.data.accounts as Account[]) || []));
+      pageToken = response.data.nextPageToken ?? undefined;
+      if (!pageToken) break;
+    }
+
+    return all;
   }
 
-  /**
-   * Get a specific account
-   */
+  /** Obtiene una cuenta concreta. */
   async getAccount(accountName: string): Promise<Account> {
-    const response = await this.mybusinessaccount.accounts.get({
-      name: accountName,
-    });
-    return response.data;
-  }
-
-  /**
-   * List locations for an account
-   */
-  async listLocations(accountName: string): Promise<any[]> {
-    const mybusiness = google.mybusiness({
-      version: 'v4',
-      auth: this.mybusinessaccount.auth,
-    });
-
-    const response = await mybusiness.accounts.locations.list({
-      parent: accountName,
-      pageSize: 100,
-    });
-
-    return response.data.locations || [];
+    const response = await this.api.accounts.get({ name: accountName });
+    return response.data as Account;
   }
 }

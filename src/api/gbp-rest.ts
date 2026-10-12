@@ -1,0 +1,48 @@
+/**
+ * Cliente REST delgadito para los endpoints de Business Profile que NO
+ * tienen cliente en el SDK `googleapis` (el legacy `mybusiness:v4` fue
+ * retirado del SDK y del discovery, pero los endpoints de reviews y
+ * localPosts siguen operativos — verificado con probes HTTP 2026-10-12,
+ * `docs/audits/P01_API_GOOGLE.md`).
+ *
+ * Las peticiones se firman con el OAuth2Client de google-auth-library
+ * (renovación de access token incluida). El transporte se inyecta para tests.
+ */
+
+import { OAuth2Client } from 'google-auth-library';
+
+export interface RestRequest {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** Ruta relativa al baseUrl, p. ej. `/accounts/1/locations/2/reviews`. */
+  url: string;
+  params?: Record<string, string | number | boolean | undefined>;
+  data?: unknown;
+}
+
+/** Transporte mínimo usado por las capas de API (inyectable en tests). */
+export interface RestClient {
+  request<T>(req: RestRequest): Promise<T>;
+}
+
+export class GoogleRestClient implements RestClient {
+  constructor(
+    private readonly auth: OAuth2Client,
+    private readonly baseUrl: string = 'https://mybusiness.googleapis.com/v4'
+  ) {}
+
+  async request<T>(req: RestRequest): Promise<T> {
+    const response = await this.auth.request({
+      method: req.method,
+      url: `${this.baseUrl}${req.url}`,
+      params: req.params,
+      data: req.data,
+    });
+    return response.data as T;
+  }
+}
+
+/** Limita pageSize al máximo permitido por la API (50 para reviews). */
+export function clampPageSize(requested: number | undefined, fallback: number, max: number): number {
+  if (requested === undefined || Number.isNaN(requested)) return fallback;
+  return Math.min(Math.max(Math.trunc(requested), 1), max);
+}
