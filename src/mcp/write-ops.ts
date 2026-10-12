@@ -45,12 +45,19 @@ export async function replyToReviewOp(
     reviewName: args.reviewName,
     comment: args.comment,
   });
-  if (!idem.checkAndRemember(key)) {
+  // pending/commit: la clave se confirma SOLO si la escritura tiene éxito.
+  if (!idem.begin(key)) {
     return { success: false, duplicate: true, error: 'Operación duplicada ignorada' };
   }
 
-  const result = await api.replyToReview(args.reviewName, args.comment);
-  return { success: true, data: result };
+  try {
+    const result = await api.replyToReview(args.reviewName, args.comment);
+    idem.commit(key);
+    return { success: true, data: result };
+  } catch (error) {
+    idem.release(key);
+    throw error;
+  }
 }
 
 /** Borra la respuesta de una reseña con validación de pertenencia. */
@@ -79,12 +86,19 @@ export async function createPostOp(
     locationId: args.locationId,
     post: args.post,
   });
-  if (!idem.checkAndRemember(key)) {
+  // pending/commit: la clave se confirma SOLO si la escritura tiene éxito.
+  if (!idem.begin(key)) {
     return { success: false, duplicate: true, error: 'Operación duplicada ignorada' };
   }
 
-  const post = await api.createPost(args.accountId, args.locationId, args.post);
-  return { success: true, data: post };
+  try {
+    const post = await api.createPost(args.accountId, args.locationId, args.post);
+    idem.commit(key);
+    return { success: true, data: post };
+  } catch (error) {
+    idem.release(key);
+    throw error;
+  }
 }
 
 /** Borra una publicación con validación de pertenencia. */

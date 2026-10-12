@@ -19,7 +19,22 @@ export interface NameValidationResult {
 }
 
 const ACCOUNT_ID_RE = /^\d+$/;
+/**
+ * Segmento seguro para URLs de la API: sin barras, sin backslash y sin
+ * segmentos de path traversal ('.', '..', o cualquier '..' interno) —
+ * P2-01 de la revisión independiente.
+ */
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+
+function isSafeSegment(value: string): boolean {
+  return (
+    SEGMENT_RE.test(value) &&
+    value !== '.' &&
+    value !== '..' &&
+    !value.includes('..') &&
+    !value.includes('\\')
+  );
+}
 
 export const REVIEW_NAME_RE = /^accounts\/[^/]+\/locations\/[^/]+\/reviews\/[^/]+$/;
 export const POST_NAME_RE = /^accounts\/[^/]+\/locations\/[^/]+\/localPosts\/[^/]+$/;
@@ -31,7 +46,7 @@ function parseName(name: string): Record<string, string> | null {
   for (let i = 0; i < parts.length; i += 2) {
     const key = parts[i];
     const value = parts[i + 1];
-    if (!key || !value || !SEGMENT_RE.test(value)) return null;
+    if (!key || !value || !isSafeSegment(value)) return null;
     parsed[key] = value;
   }
   return parsed;
@@ -102,11 +117,16 @@ export function isWriteEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /**
  * Guard de idempotencia en memoria para operaciones de escritura.
- * `checkAndRemember(key)` devuelve true solo la primera vez que ve una clave
- * dentro de la ventana TTL. Evita duplicados por reintentos del cliente MCP.
+ *
+ * Patrón pending/commit (P1-02): `begin(key)` reserva la clave ANTES de la
+ * escritura (bloquea duplicados concurrentes), `commit(key)` la confirma al
+ * tener éxito y `release(key)` la libera si la escritura falla — así un
+ * reintento legítimo tras un error NO se descarta como duplicado.
+ *
+ * `checkAndRemember` mantiene la API anterior (begin+commit atómico).
  */
 export class IdempotencyGuard {
-  private readonly seen = new Map<string, number>();
+  private readonly seen = new Map<string, { at: number; pending: boolean }>();
 
   constructor(
     private readonly ttlMs: number = 10 * 60 * 1000,
@@ -114,12 +134,31 @@ export class IdempotencyGuard {
     private readonly now: () => number = Date.now
   ) {}
 
-  checkAndRemember(key: string): boolean {
+  /** Reserva la clave. false = ya vista dentro de la ventana TTL. */
+  begin(key: string): boolean {
     this.evict();
-    const at = this.seen.get(key);
+    const entry = this.seen.get(key);
     const current = this.now();
-    if (at !== undefined && current - at < this.ttlMs) return false;
-    this.seen.set(key, current);
+    if (entry !== undefined && current - entry.at < this.ttlMs) return false;
+    this.seen.set(key, { at: current, pending: true });
+    return true;
+  }
+
+  /** Confirma la escritura: la clave queda registrada hasta expirar. */
+  commit(key: string): void {
+    const entry = this.seen.get(key);
+    if (entry) this.seen.set(key, { at: this.now(), pending: false });
+  }
+
+  /** Libera una reserva pendiente tras un fallo (permite reintentar). */
+  release(key: string): void {
+    const entry = this.seen.get(key);
+    if (entry?.pending) this.seen.delete(key);
+  }
+
+  checkAndRemember(key: string): boolean {
+    if (!this.begin(key)) return false;
+    this.commit(key);
     return true;
   }
 
@@ -131,8 +170,8 @@ export class IdempotencyGuard {
 
   private evict(): void {
     const current = this.now();
-    for (const [key, at] of this.seen) {
-      if (current - at >= this.ttlMs) this.seen.delete(key);
+    for (const [key, entry] of this.seen) {
+      if (current - entry.at >= this.ttlMs) this.seen.delete(key);
     }
     // Límite duro de memoria: se descartan las entradas más antiguas.
     while (this.seen.size > this.maxEntries) {
@@ -145,9 +184,10 @@ export class IdempotencyGuard {
 
 /**
  * Saneado de datos externos: el contenido de reseñas/nombres de Google se
- * trata como DATOS no confiables (prompt injection). Se trunca y se marcan
- * saltos de línea para que un texto hostil no pueda reestructurar la salida
- * de la herramienta.
+ * trata como DATOS no confiables (prompt injection). Se normalizan retornos
+ * de carro y se trunca el texto. La separación estructural frente a
+ * inyección la garantiza el serializado JSON de la herramienta; esta función
+ * NO es, por sí sola, una protección completa.
  */
 export function sanitizeExternalText(text: string, maxLength: number = 2000): string {
   return text

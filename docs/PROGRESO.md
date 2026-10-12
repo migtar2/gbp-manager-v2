@@ -11,8 +11,8 @@
 | P04 | Motor de respuestas | DONE | Orchestrator | Motor híbrido L1-L4 (rules/LLM/quality/risk). Corregidos P1-004 y bug bestReply vacío. |
 | P05 | Persistencia y sincronización | DONE | Orchestrator | Diseño `docs/P05_PERSISTENCIA.md` (reutiliza Supabase de la app original, sync idempotente, Pub/Sub opcional). |
 | P06 | Integración con la app web | DONE | Orchestrator | Matriz y plan de migración `docs/P06_INTEGRACION_WEB.md`. |
-| P07 | Quality engineering | DONE | Orchestrator | 89 tests en verde (AI, guards, auth, contratos API, rate limiting, aislamiento). tsc/build/lint PASS. |
-| P08 | Revisión independiente | IN PROGRESS | Subagente reviewer | Dictamen pendiente. |
+| P07 | Quality engineering | DONE | Orchestrator | 96 tests en verde (AI, guards, auth, contratos API, rate limiting, aislamiento, idempotencia). tsc/build/lint PASS. |
+| P08 | Revisión independiente | DONE | Subagente reviewer | Dictamen: **APPROVED WITH FINDINGS** (2 P1, 9 P2). Todos corregidos: script `typecheck` (P1-01), idempotencia pending/commit (P1-02), path traversal (P2-01), `{reviewReply:{}}` (P2-02), docstring saneo (P2-03), write-ops conectado a mcp-server (P2-04), reintentos solo métodos idempotentes ante 5xx (P2-05), rating anómalo tolerado (P2-06), README al día (P2-07), motor híbrido expuesto como `gbp_draft_reply` (P2-08), aviso Jest verificado con `--detectOpenHandles` sin handles (P2-09). |
 | P09 | Documentación y GitHub | DONE | Orchestrator | README real, CI (typecheck/build/tests/lint/gitleaks), PR #1 abierto. |
 | P10 | Ecosistema Google MCP | DONE | Subagente investigación | `docs/audits/P10_ECOSISTEMA_MCP.md`. No existe MCP oficial de GBP → arquitectura propia validada. |
 

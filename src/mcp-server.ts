@@ -31,7 +31,15 @@ import {
   IdempotencyGuard,
   sanitizeExternalText,
 } from './mcp/guards';
+import {
+  replyToReviewOp,
+  deleteReviewReplyOp,
+  createPostOp,
+  deletePostOp,
+} from './mcp/write-ops';
 import { normalizeStarRating } from './ai/star-rating';
+import { generateHybridReply } from './ai/hybrid-engine';
+import type { ReplyContext } from './ai/reply-engine';
 
 const auth = new GoogleAuth();
 
@@ -218,6 +226,61 @@ const LIST_LOCATIONS_SHAPE: z.ZodRawShape = {
   }
 );
 
+// ============ BORRADORES IA (sin escritura en Google) ============
+
+(server.tool as any)(
+  'gbp_draft_reply',
+  'Generate a DRAFT reply for a review with the hybrid engine (rules + optional LLM + quality + risk). NEVER publishes — output is a draft for human review only.',
+  {
+    accountId: z.string().describe('GBP account ID the review belongs to'),
+    locationId: z.string().describe('Location ID the review belongs to'),
+    reviewName: z.string().describe('Full review name (accounts/x/locations/y/reviews/z)'),
+  },
+  async ({
+    accountId,
+    locationId,
+    reviewName,
+  }: {
+    accountId: string;
+    locationId: string;
+    reviewName: string;
+  }) => {
+    try {
+      const nameCheck = validateReviewName(reviewName, { accountId, locationId });
+      if (!nameCheck.ok) return fail(new Error(nameCheck.reason));
+
+      const review = await reviewsApi.getReview(reviewName);
+      const ctx: ReplyContext = {
+        reviewerName: review.reviewer?.displayName || 'cliente',
+        // El motor tolera el enum de la API ('ONE'..'FIVE') y valores no parseables.
+        starRating: review.starRating as unknown as number,
+        comment: review.comment ?? null,
+        language: process.env.GBP_REPLY_LANGUAGE || 'es',
+        tone: (process.env.GBP_REPLY_TONE as ReplyContext['tone']) || 'profesional',
+        treatment: (process.env.GBP_REPLY_TREATMENT as 'tu' | 'usted') || 'usted',
+        useEmojis: process.env.GBP_REPLY_EMOJIS === 'true',
+        signature: process.env.GBP_REPLY_SIGNATURE || '',
+        businessName: process.env.GBP_REPLY_BUSINESS_NAME || '',
+        businessType: process.env.GBP_REPLY_BUSINESS_TYPE,
+      };
+
+      const draft = await generateHybridReply(ctx);
+      return ok({
+        draft: draft.text,
+        engine: draft.engine,
+        approved: draft.approved,
+        requiresHumanReview: draft.requiresHumanReview,
+        risk: { level: draft.risk.level, categories: draft.risk.categories },
+        qualityFailed: draft.quality.filter((c) => !c.passed).map((c) => c.name),
+        warning:
+          'BORRADOR sin publicar. Publicar exige GBP_ENABLE_WRITE_TOOLS=true y aprobación explícita (gbp_reply_review).',
+      });
+    } catch (error) {
+      return fail(error);
+    }
+  }
+);
+
 // ============ WRITE CONTROLLED Tools ============
 // Solo se registran con GBP_ENABLE_WRITE_TOOLS=true. Toda escritura exige
 // accountId + locationId y se valida contra el nombre del recurso para
@@ -245,22 +308,27 @@ if (isWriteEnabled()) {
       comment: string;
     }) => {
       try {
-        const nameCheck = validateReviewName(reviewName, { accountId, locationId });
-        if (!nameCheck.ok) return fail(new Error(nameCheck.reason));
-
-        const key = IdempotencyGuard.keyFor('reply_review', { reviewName, comment });
-        if (!idempotency.checkAndRemember(key)) {
-          return ok({ success: false, duplicate: true, message: 'Operación duplicada ignorada' });
+        const result = await replyToReviewOp(reviewsApi, idempotency, {
+          accountId,
+          locationId,
+          reviewName,
+          comment,
+        });
+        if (result.duplicate) {
+          return ok({ success: false, duplicate: true, message: result.error });
+        }
+        if (!result.success || !result.data) {
+          return fail(new Error(result.error || 'operación rechazada'));
         }
 
-        const result = await reviewsApi.replyToReview(reviewName, comment);
+        const reply = result.data.reviewReply;
         return ok({
           success: true,
           reply: {
-            comment: sanitizeExternalText(result.reviewReply.comment),
-            updateTime: result.reviewReply.updateTime,
-            reviewReplyState: result.reviewReply.reviewReplyState || 'UNKNOWN',
-            policyViolation: result.reviewReply.policyViolation || null,
+            comment: sanitizeExternalText(reply.comment),
+            updateTime: reply.updateTime,
+            reviewReplyState: reply.reviewReplyState || 'UNKNOWN',
+            policyViolation: reply.policyViolation || null,
           },
         });
       } catch (error) {
@@ -287,9 +355,12 @@ if (isWriteEnabled()) {
       reviewName: string;
     }) => {
       try {
-        const nameCheck = validateReviewName(reviewName, { accountId, locationId });
-        if (!nameCheck.ok) return fail(new Error(nameCheck.reason));
-        await reviewsApi.deleteReply(reviewName);
+        const result = await deleteReviewReplyOp(reviewsApi, {
+          accountId,
+          locationId,
+          reviewName,
+        });
+        if (!result.success) return fail(new Error(result.error || 'operación rechazada'));
         return ok({ success: true, message: 'Reply deleted' });
       } catch (error) {
         return fail(error);
@@ -326,28 +397,30 @@ const CREATE_POST_SHAPE: z.ZodRawShape = {
       ctaUrl?: string;
     }) => {
       try {
-        const key = IdempotencyGuard.keyFor('create_post', {
+        const result = await createPostOp(postsApi, idempotency, {
           accountId,
           locationId,
-          text,
-          postType,
-          ctaType,
-          ctaUrl,
+          post: {
+            topicType: postType || 'STANDARD',
+            summary: text,
+            callToAction:
+              ctaType && ctaUrl ? { actionType: ctaType, url: ctaUrl } : undefined,
+          },
         });
-        if (!idempotency.checkAndRemember(key)) {
-          return ok({ success: false, duplicate: true, message: 'Operación duplicada ignorada' });
+        if (result.duplicate) {
+          return ok({ success: false, duplicate: true, message: result.error });
         }
-
-        const post = await postsApi.createPost(accountId, locationId, {
-          topicType: postType || 'STANDARD',
-          summary: text,
-          callToAction:
-            ctaType && ctaUrl ? { actionType: ctaType, url: ctaUrl } : undefined,
-        });
+        if (!result.success || !result.data) {
+          return fail(new Error(result.error || 'operación rechazada'));
+        }
 
         return ok({
           success: true,
-          post: { name: post.name, state: post.state, searchUrl: post.searchUrl },
+          post: {
+            name: result.data.name,
+            state: result.data.state,
+            searchUrl: result.data.searchUrl,
+          },
         });
       } catch (error) {
         return fail(error);
@@ -373,9 +446,8 @@ const CREATE_POST_SHAPE: z.ZodRawShape = {
       postName: string;
     }) => {
       try {
-        const nameCheck = validatePostName(postName, { accountId, locationId });
-        if (!nameCheck.ok) return fail(new Error(nameCheck.reason));
-        await postsApi.deletePost(postName);
+        const result = await deletePostOp(postsApi, { accountId, locationId, postName });
+        if (!result.success) return fail(new Error(result.error || 'operación rechazada'));
         return ok({ success: true, message: 'Post deleted' });
       } catch (error) {
         return fail(error);

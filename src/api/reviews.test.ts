@@ -122,6 +122,14 @@ describe('ReviewsAPI', () => {
       expect(result.reviewReply.comment).toBe('Hola');
     });
 
+    it('P2-02: {reviewReply:{}} sin comment NO se acepta como respuesta', async () => {
+      const rest = fakeRest(() => ({ reviewReply: {} }));
+      const api = new ReviewsAPI(rest);
+      await expect(api.replyToReview('accounts/1/locations/A/reviews/r1', 'x')).rejects.toThrow(
+        'sin ReviewReply'
+      );
+    });
+
     it('falla explícitamente con estructura desconocida', async () => {
       const rest = fakeRest(() => ({ unexpected: true }));
       const api = new ReviewsAPI(rest);

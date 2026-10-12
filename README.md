@@ -2,7 +2,7 @@
 
 Núcleo TypeScript para gestionar **Google Business Profile** con OAuth directo (sin Pipedream) + servidor **MCP** para agentes de IA (Hermes, Claude Code, Cursor).
 
-> Estado: producción-verificado localmente. TypeScript PASS · Build PASS · 83 tests PASS · Gitleaks clean.
+> Estado: producción-verificado localmente. TypeScript PASS · Build PASS · Tests PASS (96) · Gitleaks clean.
 > Evidencias: `docs/audits/P00_REALITY_AUDIT.md`, `docs/PROGRESO.md`.
 
 ## ✨ Qué hace realmente (alineado con el código)
@@ -78,6 +78,7 @@ claude mcp add gbp-manager node /path/to/gbp-manager-v2/dist/mcp-server.js
 | `gbp_list_reviews` | Reseñas (todas las páginas) |
 | `gbp_get_unreplied_reviews` | Reseñas sin respuesta o con respuesta rechazada |
 | `gbp_list_posts` | Publicaciones locales |
+| `gbp_draft_reply` | **Genera un BORRADOR** de respuesta con el motor híbrido (reglas + LLM opcional + calidad + riesgo). Nunca publica |
 
 **WRITE CONTROLLED** (solo con `GBP_ENABLE_WRITE_TOOLS=true`):
 
@@ -151,7 +152,7 @@ Cubre lectura/escritura de reseñas, publicaciones, ubicaciones e insights.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # jest (83 tests)
+npm test            # jest (96 tests)
 npm run lint        # eslint
 ```
 

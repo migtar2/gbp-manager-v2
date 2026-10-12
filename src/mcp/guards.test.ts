@@ -22,6 +22,19 @@ describe('validateReviewName', () => {
     expect(validateReviewName('accounts/abc/locations/456/reviews/789').ok).toBe(false);
   });
 
+  it('rechaza path traversal ("." y ".." como segmentos) — P2-01', () => {
+    expect(validateReviewName('accounts/1/locations/../reviews/r1').ok).toBe(false);
+    expect(validateReviewName('accounts/1/locations/./reviews/r1').ok).toBe(false);
+    expect(validateReviewName('accounts/../locations/1/reviews/r1').ok).toBe(false);
+    expect(validateReviewName('accounts/1/locations/a..b/reviews/r1').ok).toBe(false);
+    expect(
+      validateReviewName('accounts/1/locations/../reviews/r1', {
+        accountId: '1',
+        locationId: '..',
+      }).ok
+    ).toBe(false);
+  });
+
   it('detecta confusión de cuentas (operación sobre el establecimiento equivocado)', () => {
     const result = validateReviewName(valid, { accountId: '999' });
     expect(result.ok).toBe(false);

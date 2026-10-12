@@ -44,6 +44,11 @@ export class GoogleRestClient implements RestClient {
   }
 
   async request<T>(req: RestRequest): Promise<T> {
+    assertSafeUrl(req.url);
+    // Solo se reintentan métodos idempotentes ante 5xx; POST/PUT (escrituras
+    // no idempotentes) solo ante 429, para no duplicar escrituras aplicadas.
+    const idempotentMethod = req.method === 'GET' || req.method === 'DELETE';
+
     let attempt = 0;
     for (;;) {
       try {
@@ -56,7 +61,8 @@ export class GoogleRestClient implements RestClient {
         return response.data as T;
       } catch (error) {
         const status = (error as { response?: { status?: number } })?.response?.status;
-        const retryable = status === 429 || (status !== undefined && status >= 500);
+        const retryable =
+          status === 429 || (idempotentMethod && status !== undefined && status >= 500);
         if (!retryable || attempt >= this.maxRetries) throw error;
         attempt++;
         // Backoff exponencial con jitter (recomendado por Google ante 429).
@@ -71,4 +77,25 @@ export class GoogleRestClient implements RestClient {
 export function clampPageSize(requested: number | undefined, fallback: number, max: number): number {
   if (requested === undefined || Number.isNaN(requested)) return fallback;
   return Math.min(Math.max(Math.trunc(requested), 1), max);
+}
+
+/**
+ * Choke point de seguridad de URLs (P2-01): rechaza segmentos de path
+ * traversal ('.', '..', '..' interno, backslash) con independencia de las
+ * validaciones de la capa superior.
+ */
+export function assertSafeUrl(url: string): void {
+  for (const segment of url.split('/')) {
+    if (segment === '') continue;
+    if (
+      segment === '.' ||
+      segment === '..' ||
+      segment.includes('..') ||
+      segment.includes('\\') ||
+      segment.includes('%2e') ||
+      segment.includes('%2f')
+    ) {
+      throw new Error(`URL rechazada por segmento inseguro: ${JSON.stringify(url)}`);
+    }
+  }
 }

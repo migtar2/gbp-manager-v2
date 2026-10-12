@@ -37,14 +37,24 @@ export async function generateHybridReply(
   recentReplies: string[] = [],
   provider: LLMProvider | null = loadProviderFromEnv()
 ): Promise<HybridReplyResult> {
-  const starRating = normalizeStarRating(ctx.starRating);
+  // Tolerancia a ratings no parseables (p. ej. STAR_RATING_UNSPECIFIED):
+  // se degrada a tono neutro y se fuerza revisión humana en lugar de reventar.
+  let starRating: number;
+  let ratingAnomaly = false;
+  try {
+    starRating = normalizeStarRating(ctx.starRating);
+  } catch {
+    starRating = 3;
+    ratingAnomaly = true;
+  }
   const normalizedCtx: ReplyContext = { ...ctx, starRating };
 
   const risk = assessRisk(`${ctx.comment ?? ''}`.trim());
   const rules = await generateReply(normalizedCtx, recentReplies);
 
-  // Nivel 4: con riesgo, solo borrador de reglas y revisión humana obligatoria.
-  if (risk.requiresHumanReview) {
+  // Nivel 4: con riesgo (o rating anómalo), solo borrador de reglas y
+  // revisión humana obligatoria.
+  if (risk.requiresHumanReview || ratingAnomaly) {
     const quality = validateReply(rules.text, normalizedCtx);
     return {
       text: rules.text,

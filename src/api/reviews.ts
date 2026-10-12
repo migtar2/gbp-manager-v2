@@ -74,7 +74,9 @@ export function extractReviewReply(data: unknown): ReviewReply {
   if (data && typeof data === 'object') {
     const obj = data as Record<string, unknown>;
     if (obj.reviewReply && typeof obj.reviewReply === 'object') {
-      return obj.reviewReply as ReviewReply;
+      const nested = obj.reviewReply as Record<string, unknown>;
+      // Pitfall P2-02: un `{reviewReply:{}}` vacío NO es una respuesta.
+      if (typeof nested.comment === 'string') return nested as unknown as ReviewReply;
     }
     if (typeof obj.comment === 'string') {
       return data as ReviewReply;

@@ -90,6 +90,27 @@ describe('replyToReviewOp', () => {
     expect(rest.calls).toHaveLength(1);
   });
 
+  it('P1-02: si la escritura FALLA, el reintento legítimo NO se bloquea como duplicado', async () => {
+    let failures = 1;
+    const rest = fakeRest(() => {
+      if (failures > 0) {
+        failures--;
+        throw new Error('HTTP 503');
+      }
+      return { comment: 'ok', updateTime: 't' };
+    });
+    const api = new ReviewsAPI(rest);
+    const idem = new IdempotencyGuard();
+    const args = { accountId: '1', locationId: 'A', reviewName: REVIEW_A, comment: 'Gracias' };
+
+    await expect(replyToReviewOp(api, idem, args)).rejects.toThrow('HTTP 503');
+    // La clave se liberó: el reintento se ejecuta de verdad.
+    const retry = await replyToReviewOp(api, idem, args);
+    expect(retry.success).toBe(true);
+    expect(retry.duplicate).toBeUndefined();
+    expect(rest.calls).toHaveLength(2);
+  });
+
   it('comentarios distintos sobre la misma reseña sí se permiten', async () => {
     const rest = fakeRest(() => ({ comment: 'ok', updateTime: 't' }));
     const api = new ReviewsAPI(rest);

@@ -48,6 +48,18 @@ describe('generateHybridReply', () => {
     expect(result.text.length).toBeGreaterThan(10);
   });
 
+  it('P2-06: starRating no parseable no revienta — degrada a revisión humana', async () => {
+    const result = await generateHybridReply(
+      { ...baseCtx, starRating: 'STAR_RATING_UNSPECIFIED' as unknown as number },
+      [],
+      null
+    );
+    expect(result.requiresHumanReview).toBe(true);
+    expect(result.approved).toBe(false);
+    expect(result.engine).toBe('rules');
+    expect(result.text.length).toBeGreaterThan(10);
+  });
+
   it('con LLM válido usa la salida del LLM', async () => {
     const provider = fakeProvider(GOOD_LLM_REPLY);
     const result = await generateHybridReply(baseCtx, [], provider);
